@@ -155,6 +155,24 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 62px);transform:translateX(-50%) translateY(-10px);background:rgba(40,40,42,.95);padding:9px 14px;border-radius:18px;font:600 12px/1.3 var(--label);opacity:0;transition:all .25s;z-index:50;pointer-events:none;max-width:88vw;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%)}
+/* lens picker */
+#lensrow{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);display:none;gap:6px;max-width:94%;overflow-x:auto;scrollbar-width:none;padding:4px;border-radius:22px;background:rgba(0,0,0,.35)}
+#lensrow::-webkit-scrollbar{display:none}
+#lensrow.show{display:flex}
+.lp{flex:none;min-width:44px;height:34px;padding:0 12px;border-radius:17px;background:rgba(0,0,0,.45);font:700 11px/1 var(--label);color:#fff;white-space:nowrap}
+.lp.on{background:var(--accent);color:#000}
+.lp.more{min-width:34px;padding:0;display:grid;place-items:center}
+.lp.more svg{width:16px;height:16px}
+#lensgrid,.lensgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.lc{position:relative;border-radius:12px;background:#2c2c2e;overflow:hidden;text-align:left;border:2px solid transparent;display:block;width:100%}
+.lc.on{border-color:var(--accent)}
+.lc img{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;background:#111}
+.lc .nm{padding:8px 10px 10px;font:600 12px/1.3 var(--label);display:block}
+.lc small{display:block;margin-top:3px;color:var(--dim);font-weight:500;font-size:10px;word-break:break-word}
+.lc .ed{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.6);display:grid;place-items:center}
+.lc .ed svg{width:14px;height:14px}
+.lstat{font:600 12px/1.4 var(--label);color:var(--accent);margin:0 0 10px;min-height:16px}
+.lhint{font:500 12px/1.5 var(--label);color:var(--dim);margin:0 0 6px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -185,6 +203,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
       <div id="lockpill">AE/AF LOCK</div>
       <div id="count"></div>
       <div id="flash"></div>
+      <div id="lensrow"></div>
       <div id="zoompills"></div>
       <div id="tray">
         <div id="chips"></div>
@@ -206,6 +225,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 <div class="sheet" id="settings"><div class="panel" id="setpanel"></div></div>
 
+<div class="sheet" id="lenses"><div class="panel" id="lenspanel"></div></div>
+
 <div id="viewer">
   <div id="vtop"><button class="ib" id="vClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button><div style="text-align:center"><b id="vTitle"></b><small id="vMeta"></small></div><span style="width:36px"></span></div>
   <div id="vstage"></div>
@@ -220,7 +241,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 <div id="start">
   <div class="lensmark"></div>
   <h1>Lumen <em>Camera</em></h1>
-  <p>Manual ISO, shutter, white balance and focus. Full-resolution capture with optional untouched originals, night stacking, time-lapse and slo-mo.</p>
+  <p>Manual ISO, shutter, white balance and focus. Switch between every lens on your phone. Full-resolution capture with optional untouched originals, night stacking, time-lapse and slo-mo.</p>
   <p class="warn" id="secwarn" hidden>This page must be opened over https (or localhost) for the camera to work.</p>
   <button class="go" id="goBtn">Open camera</button>
 </div>
@@ -245,6 +266,7 @@ const save=()=>{try{localStorage.setItem('lumen.prefs',JSON.stringify(P))}catch(
 const S={mode:'PHOTO',facing:'environment',deviceId:null,stream:null,track:null,ic:null,caps:{},pcaps:null,
   lenses:[],lensIdx:0,night:false,man:{ev:null,iso:null,ss:null,wb:null,mf:null},dzoom:1,zoom:1,
   rec:null,recording:false,recStart:0,gallery:[],vIdx:0,locked:false,selChip:null,trayOpen:false,busy:false,audioStream:null};
+const LAST={};
 const MODES=['TIME-LAPSE','SLO-MO','VIDEO','PHOTO','PORTRAIT 1:1','PRO'];
 const isVideoMode=m=>['TIME-LAPSE','SLO-MO','VIDEO'].includes(m);
 
@@ -285,13 +307,14 @@ async function startCamera(){
   S.caps=(S.track.getCapabilities&&S.track.getCapabilities())||{};
   S.ic=null;S.pcaps=null;
   if('ImageCapture' in window){try{S.ic=new ImageCapture(S.track);S.pcaps=await S.ic.getPhotoCapabilities()}catch(e){S.pcaps=null}}
-  const set=S.track.getSettings();if(set.facingMode)S.facing=set.facingMode;
+  const set=S.track.getSettings();if(set.facingMode)S.facing=set.facingMode;if(set.deviceId){LAST[S.facing]=set.deviceId;LENSINFO[set.deviceId]=Object.assign(LENSINFO[set.deviceId]||{},{facing:S.facing})}
   S.zoom=set.zoom||1;S.dzoom=1;S.man={ev:null,iso:null,ss:null,wb:null,mf:null};S.locked=false;$('#lockpill').style.display='none';
   applyMirror();await listLenses();buildZoom();buildChips();updateInfo();fitVF();buildSettings();
 }
 async function listLenses(){try{const d=await navigator.mediaDevices.enumerateDevices();
   S.lenses=d.filter(x=>x.kind==='videoinput');const cur=S.track.getSettings().deviceId;
-  S.lensIdx=Math.max(0,S.lenses.findIndex(l=>l.deviceId===cur))}catch(e){S.lenses=[]}}
+  S.lensIdx=Math.max(0,S.lenses.findIndex(l=>l.deviceId===cur))}catch(e){S.lenses=[]}
+  buildLensRow()}
 function applyMirror(){const front=S.facing==='user';const m=front&&P.mirror;
   video.classList.toggle('mirror',m);ov.classList.toggle('mirror',m);updateZoomCSS()}
 function updateZoomCSS(){const m=video.classList.contains('mirror');video.style.transform=`scale(${S.dzoom})${m?' scaleX(-1)':''}`}
@@ -348,7 +371,7 @@ function chipText(k){
   if(k==='warmth')return (P.warmth>0?'+':'')+P.warmth;
   if(k==='aspect')return S.mode==='PORTRAIT 1:1'?'1:1':isVideoMode(S.mode)?'16:9':P.aspect;
   if(k==='timer')return P.timer?P.timer+'s':'Off';
-  if(k==='lens')return S.lenses.length>1?(S.lensIdx+1)+'/'+S.lenses.length:'1';
+  if(k==='lens')return curLensShort();
 }
 function buildChips(){const c=$('#chips');c.innerHTML='';
   [...PRO,...SOFT].forEach(d=>{const b=document.createElement('button');b.className='chip';b.dataset.k=d.k;
@@ -383,7 +406,7 @@ function renderDial(){const d=$('#dial');d.innerHTML='';const k=S.selChip;if(!k)
     d.append(seg([['4:3','4:3'],['16:9','16:9'],['1:1','1:1']],P.aspect,v=>{P.aspect=v;save();fitVF()}))}
   if(k==='timer')d.append(seg([[0,'Off'],[3,'3s'],[10,'10s']],P.timer,v=>{P.timer=v;save()}));
   if(k==='lens'){if(S.lenses.length<2){d.innerHTML='<div id="dialnote">Only one camera is exposed to the browser.</div>';return}
-    d.append(seg(S.lenses.map((l,i)=>[i,l.label?shortLabel(l.label,i):'Camera '+(i+1)]),S.lensIdx,async i=>{S.deviceId=S.lenses[i].deviceId;await startCamera()}))}
+    const b=document.createElement('button');b.className='autob on';b.textContent='CHOOSE LENS';b.onclick=openLensSheet;d.append(b)}
 }
 function shortLabel(l,i){const m=l.match(/(ultra ?wide|telephoto|wide|front|back|rear)/i);return (m?m[1]:'Cam')+' '+(i+1)}
 function previewStyle(){/* CSS approximation of style on live view */
@@ -401,7 +424,7 @@ function autoPro(k){if(k==='ev')apply({exposureCompensation:0});
   if(k==='iso'||k==='ss'){if(S.man.iso==null&&S.man.ss==null)apply({exposureMode:'continuous'});else applyPro('iso')}
   if(k==='wb')apply({whiteBalanceMode:'continuous'});if(k==='mf')apply({focusMode:'continuous'})}
 function openTray(o){S.trayOpen=o;$('#tray').classList.toggle('open',o);$('#bTray').classList.toggle('on',o);
-  $('#bTray svg').style.transform=o?'rotate(180deg)':'';$('#zoompills').style.display=o?'none':'flex';if(o&&!S.selChip)selectChip('iso')}
+  $('#bTray svg').style.transform=o?'rotate(180deg)':'';$('#zoompills').style.display=o?'none':'flex';$('#lensrow').style.display=o?'none':'';if(o&&!S.selChip)selectChip('iso')}
 
 /* ---------- style processing ---------- */
 function styleParams(){const base={natural:{t:0,w:0,s:0},standard:{t:.08,w:0,s:.08},rich:{t:.28,w:0,s:.12},vibrant:{t:.1,w:.02,s:.38},
@@ -592,7 +615,7 @@ function applyOverlays(){$('#grid').style.display=P.grid?'block':'none';$('#leve
 
 /* ---------- gestures on viewfinder ---------- */
 const ptrs=new Map();let g0=null,pinch0=null,lpTimer=null,evDrag=null,focusHideT=null;
-vf.addEventListener('pointerdown',e=>{if(e.target.closest('#tray,#zoompills'))return;vf.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+vf.addEventListener('pointerdown',e=>{if(e.target.closest('#tray,#zoompills,#lensrow'))return;vf.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch0={d:Math.hypot(a.x-b.x,a.y-b.y),z:curZoom()};clearTimeout(lpTimer);g0=null;return}
   g0={x:e.clientX,y:e.clientY,t:Date.now(),moved:false};
   const fe=$('#focus');if(fe.classList.contains('show')&&S.caps.exposureCompensation){evDrag={y:e.clientY,v:S.man.ev??liveVal('ev')??0}}else evDrag=null;
@@ -640,7 +663,7 @@ sh.addEventListener('pointerdown',e=>{if(isVideoMode(S.mode)||!P.burst||S.night|
 sh.addEventListener('pointerup',()=>{clearTimeout(burstTimer);if(burstOn){burstOn=false;sh._skip=true;setTimeout(()=>sh._skip=false,60)}});
 sh.addEventListener('pointerleave',()=>{clearTimeout(burstTimer);burstOn=false});
 sh.onclick=()=>{if(sh._skip)return;if(isVideoMode(S.mode)){S.recording?stopRec():startRec()}else capturePhoto()};
-$('#flip').onclick=async()=>{if(S.recording)return;S.facing=S.facing==='user'?'environment':'user';S.deviceId=null;await startCamera();toast(S.facing==='user'?'Front camera':'Back camera',900)};
+$('#flip').onclick=async()=>{if(S.recording)return;S.facing=S.facing==='user'?'environment':'user';S.deviceId=LAST[S.facing]||null;await startCamera();toast(S.facing==='user'?'Front camera':'Back camera',900)};
 const FL=['off','auto','on'];
 function markFlash(){const b=$('#bFlash');b.classList.toggle('on',P.flash==='on');b.style.opacity=P.flash==='off'?.55:1;b.title='Flash '+P.flash}
 $('#bFlash').onclick=()=>{P.flash=FL[(FL.indexOf(P.flash)+1)%3];if(P.flash==='auto')P.flash='on';save();markFlash();toast('Flash '+P.flash.toUpperCase(),800);
@@ -675,6 +698,80 @@ function buildSettings(){const p=$('#setpanel');p.innerHTML='';
   pre.textContent=keys.map(k=>{const v=c[k];if(v==null)return `${k}: not available`;if(Array.isArray(v))return `${k}: ${v.join(', ')}`;if(typeof v==='object')return `${k}: ${+(+v.min).toFixed(3)} → ${+(+v.max).toFixed(3)}`;return `${k}: ${v}`}).join('\n')+
    (S.pcaps&&S.pcaps.imageWidth?`\nstill photo: up to ${S.pcaps.imageWidth.max}×${S.pcaps.imageHeight.max}`:'\nstill photo: video-frame capture only');
   p.append(pre);const b=document.createElement('button');b.className='close';b.textContent='Done';b.onclick=()=>$('#settings').classList.remove('show');p.append(b)}
+
+/* ---------- lens manager ---------- */
+let LN={};try{LN=JSON.parse(localStorage.getItem('lumen.lensnames')||'{}')}catch(e){}
+const saveLN=()=>{try{localStorage.setItem('lumen.lensnames',JSON.stringify(LN))}catch(e){}};
+const LENSINFO={};let probing=false,probed=false;
+const PENCIL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>';
+function currentDeviceId(){return S.track?S.track.getSettings().deviceId:null}
+function guessFacing(l){const t=(l.label||'').toLowerCase();if(/front|user|facetime|selfie/.test(t))return 'user';return 'environment'}
+function lensFacing(l){return (LENSINFO[l.deviceId]&&LENSINFO[l.deviceId].facing)||guessFacing(l)}
+function lensGroup(f){return S.lenses.filter(l=>!(LENSINFO[l.deviceId]&&LENSINFO[l.deviceId].failed)&&lensFacing(l)===f)}
+function autoName(l){const t=(l.label||'').toLowerCase();
+  if(/ultra/.test(t))return 'Ultra Wide 0.5×';if(/tele/.test(t))return 'Telephoto';if(/triple|dual/.test(t))return 'Auto (all lenses)';
+  if(/back camera|\bwide\b/.test(t))return 'Wide 1×';return null}
+function lensName(l,i){return LN[l.deviceId]||autoName(l)||('Camera '+(i+1))}
+function lensShort(l,i){const t=(l.label||'').toLowerCase();if(LN[l.deviceId])return LN[l.deviceId].slice(0,10);
+  if(/ultra/.test(t))return '0.5×';if(/tele/.test(t))return 'Tele';if(/triple|dual/.test(t))return 'Auto';if(/back camera|\bwide\b/.test(t))return '1×';return 'Lens '+(i+1)}
+function curLens(){const id=currentDeviceId();return S.lenses.find(l=>l.deviceId===id)}
+function curLensShort(){const l=curLens();if(!l)return '1';const g=lensGroup(lensFacing(l));return lensShort(l,Math.max(0,g.indexOf(l)))}
+
+function buildLensRow(){const row=$('#lensrow');row.innerHTML='';
+  const g=lensGroup(S.facing);if(g.length<2){row.classList.remove('show');return}
+  const cur=currentDeviceId();
+  g.forEach((l,i)=>{const b=document.createElement('button');b.className='lp'+(l.deviceId===cur?' on':'');b.textContent=lensShort(l,i);
+    b.setAttribute('aria-label','Use '+lensName(l,i));b.onclick=()=>{if(l.deviceId!==cur)switchLens(l.deviceId)};row.append(b)});
+  const m=document.createElement('button');m.className='lp more';m.setAttribute('aria-label','All lenses with previews');
+  m.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';m.onclick=openLensSheet;row.append(m);
+  row.classList.add('show')}
+
+async function switchLens(id){if(S.recording){toast('Stop recording first');return}
+  const prev=S.deviceId;S.deviceId=id;
+  try{await startCamera()}catch(e){S.deviceId=prev;LENSINFO[id]=Object.assign(LENSINFO[id]||{},{failed:true});
+    try{await startCamera()}catch(e2){}buildLensRow();toast('That camera can\'t be opened by the browser',2500);return}
+  const l=curLens();if(l)toast(lensName(l,Math.max(0,lensGroup(lensFacing(l)).indexOf(l))),900)}
+
+function renderLensSheet(status){const p=$('#lenspanel');p.innerHTML='';
+  const h=document.createElement('h2');h.textContent='CAMERAS ON THIS PHONE';p.append(h);
+  const hint=document.createElement('p');hint.className='lhint';hint.textContent='Tap a camera to use it. Tap the pencil to name it, for example 0.5× Ultra Wide or 3× Telephoto.';p.append(hint);
+  const st=document.createElement('p');st.className='lstat';st.textContent=status||'';p.append(st);
+  const cur=currentDeviceId();let any=false;
+  [['environment','BACK CAMERAS'],['user','FRONT CAMERAS']].forEach(([f,title])=>{const g=lensGroup(f);if(!g.length)return;any=true;
+    const t=document.createElement('h2');t.textContent=title;p.append(t);const grid=document.createElement('div');grid.className='lensgrid';
+    g.forEach((l,i)=>{const inf=LENSINFO[l.deviceId]||{};const b=document.createElement('div');b.className='lc'+(l.deviceId===cur?' on':'');b.setAttribute('role','button');b.tabIndex=0;
+      b.innerHTML=(inf.thumb?'<img alt="" src="'+inf.thumb+'">':'<img alt="" style="visibility:hidden">')+'<span class="nm"><span class="n"></span><small></small></span><span class="ed" role="button" aria-label="Rename">'+PENCIL+'</span>';
+      b.querySelector('.n').textContent=lensName(l,i);
+      b.querySelector('small').textContent=[inf.zoomMax?('digital + optical zoom to '+(+inf.zoomMax).toFixed(0)+'×'):'',l.label||''].filter(Boolean).join(' · ');
+      b.onclick=e=>{if(e.target.closest('.ed')){renameLens(l,i);return}$('#lenses').classList.remove('show');if(l.deviceId!==cur)switchLens(l.deviceId)};
+      b.onkeydown=e=>{if(e.key==='Enter')b.onclick(e)};grid.append(b)});p.append(grid)});
+  if(!any){const n=document.createElement('p');n.className='lhint';n.textContent='No other cameras are exposed to the browser.';p.append(n)}
+  const r=document.createElement('button');r.className='close';r.textContent='Refresh previews';r.onclick=()=>probeLenses();p.append(r);
+  const d=document.createElement('button');d.className='close';d.textContent='Done';d.onclick=()=>$('#lenses').classList.remove('show');p.append(d)}
+
+function renameLens(l,i){const n=prompt('Name this lens (for example: 0.5× Ultra Wide)',lensName(l,i));if(n===null)return;
+  if(n.trim())LN[l.deviceId]=n.trim().slice(0,24);else delete LN[l.deviceId];saveLN();renderLensSheet();buildLensRow();refreshChipVals()}
+
+async function probeLenses(){if(probing||!S.stream)return;if(S.recording){toast('Stop recording first');return}
+  probing=true;probed=true;const prevId=currentDeviceId();const list=S.lenses.slice();
+  S.stream.getTracks().forEach(t=>t.stop());video.srcObject=null;
+  for(let k=0;k<list.length;k++){const l=list[k];renderLensSheet('Scanning camera '+(k+1)+' of '+list.length+'…');
+    try{const st=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:l.deviceId},width:{ideal:640},height:{ideal:480}},audio:false});
+      const tr=st.getVideoTracks()[0],set=tr.getSettings(),caps=tr.getCapabilities?tr.getCapabilities():{};
+      const v=document.createElement('video');v.srcObject=st;v.muted=true;v.playsInline=true;await v.play();await sleep(500);
+      const c=document.createElement('canvas');c.width=180;c.height=240;const x=c.getContext('2d');const sc=Math.max(180/v.videoWidth,240/v.videoHeight);
+      x.drawImage(v,(180-v.videoWidth*sc)/2,(240-v.videoHeight*sc)/2,v.videoWidth*sc,v.videoHeight*sc);
+      LENSINFO[l.deviceId]={facing:set.facingMode||guessFacing(l),thumb:c.toDataURL('image/jpeg',0.7),zoomMax:caps.zoom?caps.zoom.max:null,failed:false};
+      st.getTracks().forEach(t=>t.stop());v.srcObject=null}
+    catch(e){LENSINFO[l.deviceId]=Object.assign(LENSINFO[l.deviceId]||{},{failed:true})}
+    await sleep(200)}
+  probing=false;S.deviceId=prevId||null;
+  try{await startCamera()}catch(e){S.deviceId=null;try{await startCamera()}catch(e2){}}
+  if($('#lenses').classList.contains('show'))renderLensSheet()}
+
+async function openLensSheet(){if(S.recording){toast('Stop recording first');return}
+  $('#lenses').classList.add('show');renderLensSheet();if(!probed)await probeLenses()}
+$('#lenses').onclick=e=>{if(e.target.id==='lenses')$('#lenses').classList.remove('show')};
 
 /* ---------- boot ---------- */
 if(!window.isSecureContext)$('#secwarn').hidden=false;
