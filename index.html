@@ -324,8 +324,8 @@ function fmtSS(v){ // exposureTime in 100µs units
   const s=v/10000;if(s>=0.4)return s.toFixed(s<2?1:0)+'s';return '1/'+Math.round(1/s)}
 function updateInfo(){if(!S.track)return;const s=S.track.getSettings();const parts=[];
   if(isVideoMode(S.mode)){parts.push(`${s.width}×${s.height}`,`${Math.round(s.frameRate||0)} FPS`)}
-  else{const pw=S.pcaps&&S.pcaps.imageWidth?S.pcaps.imageWidth.max:s.width,ph=S.pcaps&&S.pcaps.imageHeight?S.pcaps.imageHeight.max:s.height;
-    parts.push(`${(pw*ph/1e6).toFixed(1)} MP`)}
+  else{if(S.mpKey!==S.track.id){const pw=S.pcaps&&S.pcaps.imageWidth?S.pcaps.imageWidth.max:s.width,ph=S.pcaps&&S.pcaps.imageHeight?S.pcaps.imageHeight.max:s.height;
+      S.mp=(pw*ph/1e6).toFixed(1);S.mpKey=S.track.id}parts.push(S.mp+' MP')}
   if(s.iso)parts.push('ISO '+Math.round(s.iso));if(s.exposureTime)parts.push(fmtSS(s.exposureTime));
   if(s.colorTemperature)parts.push(Math.round(s.colorTemperature)+'K');
   $('#info').textContent=parts.join('  ·  ')}
@@ -450,15 +450,15 @@ async function finishPhoto(blob,meta){
   let bmp;try{bmp=await createImageBitmap(blob)}catch(e){return addItem(blob,'image',meta)}
   let sw=bmp.width,sh=bmp.height;const tr=targetRatio(sw,sh);let cw=sw,ch=sh;
   if(Math.abs(sw/sh-tr)>0.01){if(sw/sh>tr)cw=Math.round(sh*tr);else ch=Math.round(sw/tr)}
-  const dz=S.dzoom;cw=Math.round(cw/dz);ch=Math.round(ch/dz);
+  const ow=cw,oh=ch;const dz=S.dzoom;cw=Math.round(cw/dz);ch=Math.round(ch/dz);
   const untouched=!needsStyle()&&cw===sw&&ch===sh&&!mirror&&P.format==='jpeg'&&/jpe?g/.test(blob.type);
   if(untouched){bmp.close&&bmp.close();meta.processing='Original (untouched by this app)';return addItem(blob,'image',meta)}
-  const c=document.createElement('canvas');c.width=cw;c.height=ch;const x=c.getContext('2d');
-  if(mirror){x.translate(cw,0);x.scale(-1,1)}
-  x.drawImage(bmp,(sw-cw)/2,(sh-ch)/2,cw,ch,0,0,cw,ch);bmp.close&&bmp.close();
-  if(needsStyle()){const id=x.getImageData(0,0,cw,ch);x.putImageData(processPixels(id),0,0)}
+  const c=document.createElement('canvas');c.width=ow;c.height=oh;const x=c.getContext('2d');x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
+  if(mirror){x.translate(ow,0);x.scale(-1,1)}
+  x.drawImage(bmp,(sw-cw)/2,(sh-ch)/2,cw,ch,0,0,ow,oh);bmp.close&&bmp.close();
+  if(needsStyle()){const id=x.getImageData(0,0,ow,oh);x.putImageData(processPixels(id),0,0)}
   const type={jpeg:'image/jpeg',png:'image/png',webp:'image/webp'}[P.format];
-  const out=await toBlob(c,type,P.quality);meta.processing=(needsStyle()?STYLES[P.style]+' style':'Cropped/encoded')+' · '+P.format.toUpperCase();
+  const out=await toBlob(c,type,P.quality);meta.processing=(needsStyle()?STYLES[P.style]+' style':'Cropped/encoded')+(dz>1?' · '+dz.toFixed(1)+'× digital zoom, kept at full size':'')+' · '+P.format.toUpperCase();
   addItem(out,'image',meta)}
 
 async function countdown(){if(!P.timer)return;const c=$('#count');c.style.display='grid';
